@@ -1,0 +1,58 @@
+{
+  "name": "relay-private-chat",
+  "version": "1.0.0",
+  "description": "Single-instance private chat with Firebase, MongoDB, Socket.IO and optional Redis",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "dev": "concurrently -k \"node --watch server/index.js\" \"vite\"",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "test": "node --test tests/*.test.js",
+    "test:integration": "node --test tests/integration.test.js",
+    "check": "node scripts/check.js",
+    "test:browser": "playwright test",
+    "test:all": "npm run check && npm run build && npm test && npm run test:browser",
+    "format": "prettier --write server client scripts tests vite.config.js playwright.config.js package.json render.yaml"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1147.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.1",
+    "firebase": "^12.19.0",
+    "firebase-admin": "^14.5.0",
+    "helmet": "^8.3.0",
+    "mongodb": "^6.21.0",
+    "multer": "^2.4.0",
+    "redis": "^5.12.1",
+    "sharp": "^0.35.5",
+    "socket.io": "^4.8.4",
+    "socket.io-client": "^4.8.4",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "concurrently": "^9.2.4",
+    "mongodb-memory-server": "^10.4.3",
+    "prettier": "^3.9.9",
+    "supertest": "^7.3.1",
+    "vite": "^7.3.7"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.5",
+    "shell-quote": "^1.10.1",
+    "gaxios": {
+      "uuid": "^11.1.1"
+    }
+  }
+}
