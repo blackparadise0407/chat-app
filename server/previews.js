@@ -81,7 +81,7 @@ export async function publicGet(value, { signal, image = false, resolve = lookup
           const allowed = image
             ? /^image\/(jpeg|png|webp|gif)(;|$)/i
             : /^(text\/html|application\/xhtml\+xml)(;|$)/i;
-          const limit = image ? 1024 * 1024 : 512 * 1024;
+          const limit = image ? 1024 * 1024 : 4 * 1024 * 1024;
           if (
             status !== 200 ||
             !allowed.test(type) ||

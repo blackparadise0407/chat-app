@@ -82,7 +82,9 @@ function responseRequest({
     const req = new EventEmitter();
     req.setTimeout = () => req;
     inspect?.(url, options);
-    const res = Readable.from([Buffer.from(body)]);
+    const res = Readable.from(
+      (Array.isArray(body) ? body : [body]).map((chunk) => Buffer.from(chunk)),
+    );
     res.statusCode = status;
     res.headers = headers;
     queueMicrotask(() => callback(res));
@@ -115,7 +117,7 @@ test('pins outgoing DNS lookup and refuses private redirect targets', async () =
 test('rejects non-HTML, oversized responses, redirect loops and stalled DNS', async () => {
   for (const options of [
     { headers: { 'content-type': 'application/json' } },
-    { body: 'x'.repeat(512 * 1024 + 1) },
+    { body: 'x'.repeat(4 * 1024 * 1024 + 1) },
     { status: 302, headers: { location: '/again' } },
   ])
     await assert.rejects(
@@ -128,6 +130,51 @@ test('rejects non-HTML, oversized responses, redirect loops and stalled DNS', as
   });
   controller.abort(new Error('Deadline'));
   await assert.rejects(blocked, /Deadline/);
+});
+test('accepts HTML up to 4 MiB with or without Content-Length', async () => {
+  const limit = 4 * 1024 * 1024;
+  for (const declared of [false, true]) {
+    const headers = { 'content-type': 'text/html' };
+    if (declared) headers['content-length'] = String(limit);
+    const result = await publicGet('https://example.com', {
+      resolve,
+      request: responseRequest({ headers, body: ['x'.repeat(limit - 1), 'x'] }),
+    });
+    assert.equal(result.body.length, limit);
+  }
+});
+test('enforces declared and streamed limits for HTML and images', async () => {
+  for (const image of [false, true]) {
+    const limit = image ? 1024 * 1024 : 4 * 1024 * 1024;
+    const headers = { 'content-type': image ? 'image/jpeg' : 'text/html' };
+    await assert.rejects(
+      publicGet('https://example.com', {
+        resolve,
+        image,
+        request: responseRequest({
+          headers: { ...headers, 'content-length': String(limit + 1) },
+          body: '',
+        }),
+      }),
+      /Unsupported preview response/,
+    );
+    await assert.rejects(
+      publicGet('https://example.com', {
+        resolve,
+        image,
+        request: responseRequest({ headers, body: ['x'.repeat(limit), 'x'] }),
+      }),
+      /Preview too large/,
+    );
+    if (image) {
+      const result = await publicGet('https://example.com', {
+        resolve,
+        image,
+        request: responseRequest({ headers, body: 'x'.repeat(limit) }),
+      });
+      assert.equal(result.body.length, limit);
+    }
+  }
 });
 const cid = new ObjectId(),
   mid = new ObjectId();
@@ -150,6 +197,34 @@ function serviceStub(content = 'https://example.com/article') {
     },
   };
 }
+test('previews large YouTube pages while preserving playlist query parameters', async () => {
+  const url = 'https://www.youtube.com/watch?v=p3CdDT4hpbE&list=RD3Hr35Kr2aXA&index=20';
+  const body = `<script>${' '.repeat(1400000)}</script>
+    <meta property="og:title" content="Video title">
+    <meta property="og:description" content="Video description">
+    <meta property="og:site_name" content="YouTube">`;
+  const previews = createPreviews({
+    services: serviceStub(url),
+    get: (value, options) =>
+      publicGet(value, {
+        ...options,
+        resolve,
+        request: responseRequest({
+          body,
+          inspect: (target) => assert.equal(target.href, url),
+        }),
+      }),
+  });
+  assert.deepEqual(await previews.message(String(cid), String(mid), 'u'), {
+    preview: {
+      url,
+      title: 'Video title',
+      description: 'Video description',
+      siteName: 'YouTube',
+      image: null,
+    },
+  });
+});
 test('deduplicates preview fetches, caches metadata and rechecks membership', async () => {
   const services = serviceStub();
   let calls = 0;
