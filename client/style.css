@@ -905,3 +905,51 @@ dialog button {
   background: #35232d;
   color: #ffba8d;
 }
+
+.link-preview-slot {
+  width: min(360px, 65vw);
+}
+.link-preview-slot:empty {
+  min-height: 1px;
+}
+.link-preview {
+  display: block;
+  overflow: hidden;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  text-decoration: none;
+}
+.link-preview:hover {
+  border-color: var(--accent);
+}
+.link-preview img {
+  display: block;
+  width: 100%;
+  height: 170px;
+  object-fit: cover;
+}
+.link-preview-text {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  overflow-wrap: anywhere;
+}
+.link-preview-text small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.link-preview-text strong {
+  font-size: 15px;
+}
+.link-preview-text > span {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

@@ -329,3 +329,54 @@ test('new themes persist with selected state and Arsenal typography', async ({ p
   );
   await expect(page.locator('link[href*="family=Arsenal"]')).toHaveCount(1);
 });
+
+test('link cards load safely and links retain query parameters', async ({ page }) => {
+  await setup(page);
+  const url = 'https://example.com/article?a=1&b=2';
+  await page.route('**/api/conversations/*/messages?authoritative=true', (route) =>
+    route.fulfill({
+      json: {
+        messages: [
+          {
+            _id: 'd'.repeat(24),
+            conversationId: cid,
+            seq: 1,
+            senderId: bob,
+            type: 'text',
+            content: `See (${url}), <script>bad</script>`,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        highWaterSeq: 1,
+        retainedFromSeq: 1,
+        hasMore: false,
+      },
+    }),
+  );
+  await page.route('**/api/conversations/*/messages/*/preview', (route) =>
+    route.fulfill({
+      json: {
+        preview: {
+          url,
+          title: '<img src=x onerror=alert(1)> Article',
+          description: 'A & B',
+          siteName: 'Example',
+          image: null,
+        },
+      },
+    }),
+  );
+  await page.goto(`/conversations/${cid}`);
+  await expect(page.locator('.bubble a')).toHaveAttribute('href', url);
+  await expect(page.locator('.link-preview')).toBeVisible();
+  await expect(page.locator('.link-preview strong')).toHaveText(
+    '<img src=x onerror=alert(1)> Article',
+  );
+  await expect(page.locator('.link-preview img')).toHaveCount(0);
+  await page.route('**/api/conversations/*/messages/*/preview', (route) =>
+    route.fulfill({ json: { preview: null } }),
+  );
+  await page.reload();
+  await expect(page.locator('.bubble a')).toHaveAttribute('href', url);
+  await expect(page.locator('.link-preview')).toHaveCount(0);
+});

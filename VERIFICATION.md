@@ -21,3 +21,10 @@ No Firebase project credentials, deployment access or private S3 bucket credenti
 - Production build and JavaScript syntax checks passed after the UI changes. All 12 backend integration tests also passed against a temporary MongoDB replica set.
 - Added browser coverage for profile images across screens, failed-image initials, Arsenal configuration, and all four new themes with persistence and selected state.
 - Browser tests could not execute in this environment: no installed Chromium binary; the Playwright browser download failed. The earlier browser results above belong to the original implementation.
+
+## Link-preview update (2026-10-14)
+
+- Fixed raw URL detection so query-string ampersands and surrounding punctuation are handled correctly.
+- Added authenticated previews for retained messages, Open Graph/Twitter/HTML metadata parsing, converted preview images, bounded in-memory caching, deduplicated requests, lazy client cards and safe fallbacks.
+- Production build and JavaScript syntax checks passed. All 21 Node tests passed: 13 backend integration tests and 8 focused URL/metadata/network/access tests. Test coverage includes pinned DNS, private redirects, private/loopback IPv4 and IPv6, size/type limits, stalled DNS, image conversion, cache deduplication, membership removal and retention.
+- Added a browser test for preview rendering, safe text and query-string preservation. Browser execution remains blocked by unavailable Chromium; live third-party previews were not verified in this environment.

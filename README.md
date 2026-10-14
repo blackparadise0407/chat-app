@@ -72,7 +72,7 @@ Optional: set `REDIS_URL` and `CACHE_ENABLED=true`. Latest 50-message pages have
 - Latest/older history, high-water-bound reconnect recovery, live/history merging and gap repair. At most 1,000 retained messages per conversation are visible, even before the periodic cleanup physically deletes earlier records. Retry deduplication exists for retained messages; expired records are not a permanent retry ledger.
 - Membership read-through positions with monotonic updates, read display, sender-excluded and retention-aware unread counts. The browser advances reads only when focused, visible, at the bottom, and its loaded timeline is contiguous. Re-added members' initial baseline is excluded from receipt counts.
 - Private JPEG/PNG/WebP uploads, byte decoding/signature validation, dimensions/pixel/5 MiB limits, normalization to static WebP, and owner/conversation binding. A reserved attachment record permits cleanup after a crash during storage upload. Abandoned/unreferenced uploads receive a 24-hour grace period.
-- Typing expiry, shared-peer presence, 45-second buzz cooldown, sounds, browser notifications while open, eight themes and responsive screens. Notifications reveal no message body. Links are rendered safely without server-side URL fetching or third-party preview scraping.
+- Typing expiry, shared-peer presence, 45-second buzz cooldown, sounds, browser notifications while open, eight themes and responsive screens. Notifications reveal no message body. Links retain full query strings and show a preview card for the first link in each text message when the site supplies metadata.
 - SPA routing, nested refresh, API/asset JSON 404s, hashed-asset caching, no-store private responses, request limits, readiness checks, cleanup and graceful shutdown.
 
 ## Verification
@@ -124,3 +124,9 @@ render.yaml     single-instance Render service definition
 Profile photos use the saved HTTPS `avatarUrl` in the account sidebar, direct-chat list/header, sender labels, user search, member lists and profile preview. Missing, invalid or failed photos fall back to initials. Google profile photos are imported when accounts are first created; existing users can set their photo URL under Settings → Profile.
 
 Arsenal loads from Google Fonts with `display=swap` and a system-font fallback. The production content security policy allows the Google Fonts stylesheet and font domains. Theme choices are Dark, Light, Glass, Midnight, Forest, Ocean, Rose and Sunset; selection persists in this browser and the active option is highlighted.
+
+### Link previews
+
+Previews load for visible saved text messages, including existing history. The first HTTP/HTTPS link gets a title, description and optional image using Open Graph, Twitter or standard HTML metadata. Authenticated conversation members request previews through the app API; the server fetches public pages without forwarding credentials or cookies. It validates DNS and every redirect, blocks private/local addresses and nonstandard ports, limits time and response sizes, and converts preview images into bounded WebP data. Successful results are cached in memory for one hour; failed fetches for one minute.
+
+No extra service or API key is required. Update dependencies (`yarn install`), rebuild and restart the server together with the client. Sites that block automated requests, require login, lack titles, render metadata only with JavaScript, or return oversized/unsupported responses may show only the clickable link. Browser refresh retries previews after the failure cache expires.

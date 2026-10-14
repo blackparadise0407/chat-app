@@ -6,7 +6,14 @@ import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createUploads } from './storage.js';
-export function createApp({ services, auth, storage, cfg }) {
+import { createPreviews } from './previews.js';
+export function createApp({
+  services,
+  auth,
+  storage,
+  cfg,
+  previews = createPreviews({ services }),
+}) {
   const app = express(),
     uploads = createUploads(services, storage);
   app.disable('x-powered-by');
@@ -25,7 +32,7 @@ export function createApp({ services, auth, storage, cfg }) {
             'wss:',
           ],
           frameSrc: ['https://*.firebaseapp.com'],
-          imgSrc: ["'self'", 'blob:', 'https:'],
+          imgSrc: ["'self'", 'blob:', 'data:', 'https:'],
           styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
           fontSrc: ["'self'", 'https://fonts.gstatic.com'],
           objectSrc: ["'none'"],
@@ -85,6 +92,12 @@ export function createApp({ services, auth, storage, cfg }) {
   );
   route('get', '/api/conversations/:id/messages', (r, u) =>
     services.history(r.params.id, u, r.query),
+  );
+  app.get(
+    '/api/conversations/:id/messages/:messageId/preview',
+    rateLimit({ windowMs: 60000, limit: 90 }),
+    async (req, res) =>
+      res.json(await previews.message(req.params.id, req.params.messageId, req.identity.userId)),
   );
   const upload = multer({
     storage: multer.memoryStorage(),

@@ -8,6 +8,7 @@ import {
 } from 'firebase/auth';
 import { io } from 'socket.io-client';
 import './style.css';
+import { extractLinks } from './links.js';
 const root = document.querySelector('#app'),
   toastEl = document.querySelector('#toast');
 const escape = (s) =>
@@ -29,6 +30,9 @@ const state = {
   version: 0,
   epoch: 0,
   repairing: new Set(),
+  previews: new Map(),
+  previewRequests: new Map(),
+  previewObserver: null,
   connection: 'Connecting',
   objectUrls: new Map(),
   loadingImages: new Set(),
@@ -135,6 +139,9 @@ function emit(event, payload) {
 function clearPrivate() {
   state.epoch++;
   state.repairing.clear();
+  state.previewObserver?.disconnect();
+  state.previews.clear();
+  state.previewRequests.clear();
   state.version++;
   state.abort?.abort();
   state.socket?.removeAllListeners();
@@ -314,6 +321,8 @@ async function connect(user) {
   });
   socket.on('conversation_removed', ({ conversationId: id }) => {
     state.cache.delete(id);
+    for (const key of state.previews.keys())
+      if (key.startsWith(`${id}:`)) state.previews.delete(key);
     for (const [key, p] of state.pending) if (p.conversationId === id) state.pending.delete(key);
     for (const [key, url] of state.objectUrls)
       if (key.startsWith(`${id}:`)) {
@@ -516,7 +525,7 @@ function timeline(forceBottom = false) {
           new Date(next.createdAt) - new Date(m.createdAt) >= 120000,
         sender = c?.members.find((x) => x.userId === m.senderId)?.user;
       const senderName = sender?.displayName || 'Former member';
-      return `<div class="message ${mine ? 'mine' : ''} ${grouped ? 'grouped' : ''}">${!mine && !grouped ? `<span class="sender">${avatar(senderName, sender?.avatarUrl)}<small>${escape(senderName)}</small></span>` : ''}<div class="bubble">${m.type === 'image' ? `<img class="shared-image" data-image="${m.attachmentId}" alt="Shared photo" loading="lazy">` : escape(m.content).replace(/(https?:\/\/[^\s&<>]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')}<time>${new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>${last ? receipt(m) : ''}</div>`;
+      return `<div class="message ${mine ? 'mine' : ''} ${grouped ? 'grouped' : ''}">${!mine && !grouped ? `<span class="sender">${avatar(senderName, sender?.avatarUrl)}<small>${escape(senderName)}</small></span>` : ''}<div class="bubble">${m.type === 'image' ? `<img class="shared-image" data-image="${m.attachmentId}" alt="Shared photo" loading="lazy">` : linkedText(m.content)}<time>${new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>${m.type === 'text' && extractLinks(m.content).length ? `<div class="link-preview-slot" data-preview="${escape(m._id)}"></div>` : ''}${last ? receipt(m) : ''}</div>`;
     })
     .join(
       '',
@@ -526,6 +535,21 @@ function timeline(forceBottom = false) {
     (b) => (b.onclick = () => retry(state.pending.get(b.dataset.retry))),
   );
   el.querySelectorAll('[data-image]').forEach((img) => loadImage(img).catch(showError));
+  state.previewObserver?.disconnect();
+  state.previewObserver = new IntersectionObserver(
+    (entries, observer) => {
+      for (const entry of entries)
+        if (entry.isIntersecting) {
+          observer.unobserve(entry.target);
+          loadPreview(entry.target);
+        }
+    },
+    { root: el, rootMargin: '200px' },
+  );
+  el.querySelectorAll('[data-preview]').forEach((slot) => {
+    if (state.previews.has(`${state.active}:${slot.dataset.preview}`)) loadPreview(slot);
+    else state.previewObserver.observe(slot);
+  });
   if (forceBottom || distance < 100) el.scrollTop = el.scrollHeight;
   else {
     el.scrollTop = oldTop;
@@ -533,6 +557,65 @@ function timeline(forceBottom = false) {
     if (indicator) indicator.hidden = false;
   }
   scheduleRead();
+}
+function linkedText(text) {
+  text = String(text ?? '');
+  let result = '',
+    cursor = 0;
+  for (const link of extractLinks(text)) {
+    result += escape(text.slice(cursor, link.start));
+    result += `<a href="${escape(link.url)}" target="_blank" rel="noopener noreferrer">${escape(link.text)}</a>`;
+    cursor = link.end;
+  }
+  return result + escape(text.slice(cursor));
+}
+async function loadPreview(slot) {
+  const id = state.active,
+    epoch = state.epoch,
+    key = `${id}:${slot.dataset.preview}`;
+  try {
+    let preview;
+    if (state.previews.has(key)) preview = state.previews.get(key);
+    else {
+      if (!state.previewRequests.has(key)) {
+        const request = api(`/conversations/${id}/messages/${slot.dataset.preview}/preview`).then(
+          (result) => result.preview || null,
+        );
+        state.previewRequests.set(key, request);
+        request
+          .finally(() => {
+            if (state.previewRequests.get(key) === request) state.previewRequests.delete(key);
+          })
+          .catch(() => {});
+      }
+      preview = await state.previewRequests.get(key);
+      if (epoch !== state.epoch || !state.conversations.some((c) => c._id === id)) return;
+      state.previews.set(key, preview);
+      while (state.previews.size > 200) state.previews.delete(state.previews.keys().next().value);
+    }
+    if (!preview || !slot.isConnected || state.active !== id || epoch !== state.epoch) return;
+    const url = extractLinks(preview.url)[0]?.url;
+    if (!url) return;
+    const timelineEl = slot.closest('.timeline');
+    const atBottom = timelineEl.scrollHeight - timelineEl.scrollTop - timelineEl.clientHeight < 100;
+    const image = /^data:image\/webp;base64,[A-Za-z0-9+/=]+$/.test(preview.image || '')
+      ? preview.image
+      : null;
+    slot.innerHTML = `<a class="link-preview" href="${escape(url)}" target="_blank" rel="noopener noreferrer">${image ? `<img src="${escape(image)}" alt="" loading="lazy">` : ''}<span class="link-preview-text"><small>${escape(preview.siteName || new URL(url).hostname)}</small><strong>${escape(preview.title)}</strong>${preview.description ? `<span>${escape(preview.description)}</span>` : ''}</span></a>`;
+    if (atBottom) {
+      timelineEl.scrollTop = timelineEl.scrollHeight;
+      slot.querySelector('img')?.addEventListener(
+        'load',
+        () => {
+          if (timelineEl.scrollHeight - timelineEl.scrollTop - timelineEl.clientHeight < 500)
+            timelineEl.scrollTop = timelineEl.scrollHeight;
+        },
+        { once: true },
+      );
+    }
+  } catch {
+    /* The ordinary link remains usable when a site cannot be previewed. */
+  }
 }
 async function loadImage(img) {
   const id = state.active,
@@ -964,6 +1047,7 @@ function preferencesScreen() {
   };
 }
 async function render() {
+  state.previewObserver?.disconnect();
   const version = ++state.version;
   state.abort?.abort();
   state.abort = new AbortController();

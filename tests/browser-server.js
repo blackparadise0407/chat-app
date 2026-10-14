@@ -21,6 +21,9 @@ createServer(async (req, res) => {
         .replace(/import\s+['"]\.\/style\.css['"];/, '');
       res.setHeader('Content-Type', 'text/javascript');
       res.end(js);
+    } else if (req.url === '/links.js') {
+      res.setHeader('Content-Type', 'text/javascript');
+      res.end(await readFile(new URL('links.js', root)));
     } else if (req.url === '/style.css') {
       res.setHeader('Content-Type', 'text/css');
       res.end(await readFile(new URL('style.css', root)));

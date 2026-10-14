@@ -11,6 +11,7 @@ import { createIndexes } from '../server/db.js';
 import { createServices } from '../server/services.js';
 import { createAuth } from '../server/auth.js';
 import { createApp } from '../server/app.js';
+import { createPreviews } from '../server/previews.js';
 import { attachSockets } from '../server/sockets.js';
 import { createUploads } from '../server/storage.js';
 import { createCache } from '../server/cache.js';
@@ -34,17 +35,15 @@ before(async () => {
   await client.connect();
   db = client.db('test');
   await createIndexes(db);
-  await db
-    .collection('users')
-    .insertMany(
-      ids.map((id, i) => ({
-        _id: id,
-        firebaseUid: `u${i}`,
-        displayName: ['Alice', 'Bob', 'Carol', 'Dave'][i],
-        handle: `test${i}`,
-        avatarUrl: null,
-      })),
-    );
+  await db.collection('users').insertMany(
+    ids.map((id, i) => ({
+      _id: id,
+      firebaseUid: `u${i}`,
+      displayName: ['Alice', 'Bob', 'Carol', 'Dave'][i],
+      handle: `test${i}`,
+      avatarUrl: null,
+    })),
+  );
   services = createServices({ db, client, cache: await createCache({ cacheEnabled: false }) });
   auth = createAuth(db, async (token) => {
     const n = Number(token);
@@ -190,20 +189,18 @@ test('history pagination, recovery snapshot, monotonic reads and unread excludes
 test('retained window and cleanup remain conversation-scoped', async () => {
   const c = await services.group(alice, { title: 'Retention', userIds: [String(bob)] });
   const id = new ObjectId(c._id);
-  await db
-    .collection('messages')
-    .insertMany(
-      Array.from({ length: 1005 }, (_, i) => ({
-        _id: new ObjectId(),
-        conversationId: id,
-        seq: i + 1,
-        senderId: bob,
-        clientMessageId: randomUUID(),
-        type: 'text',
-        content: 'old',
-        createdAt: new Date(),
-      })),
-    );
+  await db.collection('messages').insertMany(
+    Array.from({ length: 1005 }, (_, i) => ({
+      _id: new ObjectId(),
+      conversationId: id,
+      seq: i + 1,
+      senderId: bob,
+      clientMessageId: randomUUID(),
+      type: 'text',
+      content: 'old',
+      createdAt: new Date(),
+    })),
+  );
   await db.collection('conversations').updateOne({ _id: id }, { $set: { lastSeq: 1005 } });
   const recovered = await services.history(c._id, alice, { afterSeq: 0 });
   assert.equal(recovered.expired, true);
@@ -387,4 +384,44 @@ test('membership removal waits for dispatch; later sends omit removed recipients
   await isolated.send(alice, text(c._id));
   assert.ok(deliveries[0].includes(String(bob)));
   assert.ok(!deliveries[1].includes(String(bob)));
+});
+
+test('link-preview API requires membership, binds the stored message and rejects expired history', async () => {
+  const c = await services.group(alice, { title: 'Link previews', userIds: [String(bob)] });
+  const m = await services.send(alice, text(c._id, 'See https://example.com/article?a=1&b=2'));
+  let calls = 0;
+  const image = await sharp({ create: { width: 2, height: 2, channels: 3, background: '#88aaff' } })
+    .png()
+    .toBuffer();
+  const previews = createPreviews({
+    services,
+    get: async (url, options) => {
+      calls++;
+      return {
+        url,
+        body: options.image
+          ? image
+          : Buffer.from(
+              '<meta property="og:title" content="Article"><meta property="og:image" content="/cover.png">',
+            ),
+      };
+    },
+  });
+  const previewApp = createApp({ services, auth, storage, previews, cfg: { browserFirebase: {} } });
+  const path = `/api/conversations/${c._id}/messages/${m._id}/preview`;
+  assert.equal((await request(previewApp).get(path)).status, 401);
+  assert.equal((await request(previewApp).get(path).set('Authorization', 'Bearer 2')).status, 403);
+  assert.equal(calls, 0);
+  const response = await request(previewApp).get(path).set('Authorization', 'Bearer 1');
+  assert.equal(response.status, 200);
+  assert.equal(response.body.preview.url, 'https://example.com/article?a=1&b=2');
+  assert.equal(response.body.preview.title, 'Article');
+  assert.match(response.body.preview.image, /^data:image\/webp;base64,/);
+  assert.match(response.headers['cache-control'], /private, no-store/);
+  await request(previewApp).get(path).set('Authorization', 'Bearer 0');
+  assert.equal(calls, 2);
+  await db
+    .collection('conversations')
+    .updateOne({ _id: new ObjectId(c._id) }, { $set: { lastSeq: 2000 } });
+  assert.equal((await request(previewApp).get(path).set('Authorization', 'Bearer 0')).status, 404);
 });
