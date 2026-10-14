@@ -1,6 +1,6 @@
 :root {
   font-family:
-    Inter,
+    Arsenal,
     ui-sans-serif,
     system-ui,
     -apple-system,
@@ -230,6 +230,8 @@ input[type='checkbox'] {
   background: var(--card);
 }
 .avatar {
+  position: relative;
+  overflow: hidden;
   display: inline-grid;
   flex-shrink: 0;
   place-items: center;
@@ -410,6 +412,9 @@ main {
 }
 .sender {
   margin: 0 0 6px 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .bubble {
   background: var(--card);
@@ -547,7 +552,7 @@ main {
   border-radius: 12px;
   margin-bottom: 10px;
 }
-.user-result > span,
+.user-result > span:not(.avatar),
 .member > div {
   flex: 1;
 }
@@ -721,6 +726,8 @@ dialog button {
     display: none;
   }
   .header-person .avatar {
+    position: relative;
+    overflow: hidden;
     display: none;
   }
   .timeline {
@@ -812,4 +819,89 @@ dialog button {
   .chat-note {
     font-size: 8px;
   }
+}
+
+.avatar-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.sender .avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  font-size: 9px;
+}
+.profile-avatar .avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 24px;
+  font-size: 24px;
+}
+.theme-preview[aria-pressed='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+:root[data-theme='forest'] {
+  color-scheme: dark;
+  --bg: #101c18;
+  --panel: #172a22;
+  --card: #213b30;
+  --text: #ecf5ed;
+  --muted: #a1b9aa;
+  --border: #355146;
+  --accent: #9fddb4;
+  --bubble: #326b4d;
+}
+:root[data-theme='ocean'] {
+  color-scheme: dark;
+  --bg: #0b1b2a;
+  --panel: #10283b;
+  --card: #19384f;
+  --text: #e8f4fb;
+  --muted: #9ab9ce;
+  --border: #294c65;
+  --accent: #86d7ed;
+  --bubble: #25617d;
+}
+:root[data-theme='rose'] {
+  color-scheme: light;
+  --bg: #fff6f8;
+  --panel: #fffcfd;
+  --card: #f6e7ed;
+  --text: #472c38;
+  --muted: #826273;
+  --border: #e8cdd8;
+  --accent: #9c3e67;
+  --bubble: #9c3e67;
+  --shadow: 0 24px 80px #6d254322;
+}
+:root[data-theme='sunset'] {
+  color-scheme: dark;
+  --bg: #251821;
+  --panel: #35232d;
+  --card: #49303a;
+  --text: #fff0e8;
+  --muted: #cfaca8;
+  --border: #63444e;
+  --accent: #ffba8d;
+  --bubble: #914d42;
+}
+.theme-preview.forest {
+  background: #172a22;
+  color: #9fddb4;
+}
+.theme-preview.ocean {
+  background: #10283b;
+  color: #86d7ed;
+}
+.theme-preview.rose {
+  background: #fff6f8;
+  color: #9c3e67;
+}
+.theme-preview.sunset {
+  background: #35232d;
+  color: #ffba8d;
 }

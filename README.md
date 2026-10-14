@@ -2,22 +2,51 @@
 
 A runnable implementation of `chat-app-implementation-plan-v2.md`. One Node.js process serves the Vite-built vanilla JavaScript SPA, Express API and Socket.IO. MongoDB is authoritative; Redis is optional. Uploaded images use a private S3-compatible bucket.
 
-The supplied workspace contained the plan only. This is a new standalone application, not a patch to existing source. Existing custom sounds, icons, GIF integrations and encrypted-file persistence were not available to migrate; the four themes, chat grouping, photos/lightbox, synthesized notification sound, favicon badge and buzz were recreated.
+The supplied workspace contained the plan only. This is a new standalone application, not a patch to existing source. Existing custom sounds, icons, GIF integrations and encrypted-file persistence were not available to migrate; the eight themes, chat grouping, photos/lightbox, synthesized notification sound, favicon badge and buzz were recreated.
 
 ## Start locally
 
-Requirements: Node.js 22 or newer, MongoDB Atlas or a local replica set, a Firebase project with Google sign-in enabled. Configure S3 only if using photo uploads.
+Requirements: Node.js 22 or newer, Docker Desktop running with Linux containers, and a Firebase project with Google sign-in enabled. Configure S3 only if using photo uploads. MongoDB runs locally, avoiding the remote database connection blocked by your VPN.
 
 ```sh
 npm ci
-cp .env.example .env
-# Fill .env with your values.
+npm run db:up
+```
+
+`compose.yaml` starts MongoDB 7.0 as a single-node `rs0` replica set, initializes it automatically and waits for a writable primary. Its port is exposed only on `127.0.0.1`, and a named volume keeps data across container restarts. No local MongoDB installation is needed. The first image pull needs access to Docker Hub.
+
+Copy `.env.example` to `.env` (PowerShell: `Copy-Item .env.example .env`; macOS/Linux: `cp .env.example .env`), then fill your Firebase settings. Keep this local database configuration:
+
+```dotenv
+MONGODB_URI=mongodb://127.0.0.1:27017/relay?replicaSet=rs0&directConnection=true
+MONGODB_DB=relay
+```
+
+Node runs on your computer with `npm run dev`, not inside Docker. `directConnection=true` makes the driver use the forwarded local endpoint instead of discovering Docker-internal addresses. This Compose database has no authentication and is intended only for local development.
+
+```sh
+npm run db:check
 npm run dev
 ```
 
+The connection check reads `.env`, pings MongoDB, confirms a writable replica set, and runs a transaction that is always rolled back. It prints no credentials and leaves no test documents.
+
 Open `http://localhost:5173`. Vite proxies `/api` and `/socket.io` (polling and WebSocket upgrades) to Node on port 3000. Set the Firebase authorized domains to include `localhost`. Create profiles by signing in, then share the exact public handle or app ID shown in Profile. No email directory is exposed.
 
-A MongoDB standalone server cannot run the transactions used here. For an existing local Mongo installation, start it with `mongod --replSet rs0`, run `rs.initiate()` once using `mongosh`, and use the example replica-set URI. Use authenticated MongoDB access outside local development.
+Useful Docker commands:
+
+```sh
+docker compose ps
+npm run db:logs
+docker compose exec mongo mongosh --quiet --eval "db.hello().isWritablePrimary"
+npm run db:down
+```
+
+`db:down` stops the containers but preserves the volume. Start again using `npm run db:up`. If port 27017 is already occupied, change only the host side of the mapping (for example `127.0.0.1:27018:27017`) and use port 27018 in `MONGODB_URI`; keep the replica-set member's internal port unchanged. Avoid `docker compose down -v` unless you intend to erase the local database.
+
+If startup fails, inspect `docker compose logs mongo`. If the VPN also blocks Docker Hub, the Mongo image must first be available through a company-approved registry or connection. Firebase sign-in still uses its external provider.
+
+For an existing local Mongo installation, start it with `mongod --replSet rs0`, run `rs.initiate()` once using `mongosh`, and use a replica-set URI. A standalone MongoDB server cannot run the app's transactions.
 
 ## Production / Render
 
@@ -43,7 +72,7 @@ Optional: set `REDIS_URL` and `CACHE_ENABLED=true`. Latest 50-message pages have
 - Latest/older history, high-water-bound reconnect recovery, live/history merging and gap repair. At most 1,000 retained messages per conversation are visible, even before the periodic cleanup physically deletes earlier records. Retry deduplication exists for retained messages; expired records are not a permanent retry ledger.
 - Membership read-through positions with monotonic updates, read display, sender-excluded and retention-aware unread counts. The browser advances reads only when focused, visible, at the bottom, and its loaded timeline is contiguous. Re-added members' initial baseline is excluded from receipt counts.
 - Private JPEG/PNG/WebP uploads, byte decoding/signature validation, dimensions/pixel/5 MiB limits, normalization to static WebP, and owner/conversation binding. A reserved attachment record permits cleanup after a crash during storage upload. Abandoned/unreferenced uploads receive a 24-hour grace period.
-- Typing expiry, shared-peer presence, 45-second buzz cooldown, sounds, browser notifications while open, four themes and responsive screens. Notifications reveal no message body. Links are rendered safely without server-side URL fetching or third-party preview scraping.
+- Typing expiry, shared-peer presence, 45-second buzz cooldown, sounds, browser notifications while open, eight themes and responsive screens. Notifications reveal no message body. Links are rendered safely without server-side URL fetching or third-party preview scraping.
 - SPA routing, nested refresh, API/asset JSON 404s, hashed-asset caching, no-store private responses, request limits, readiness checks, cleanup and graceful shutdown.
 
 ## Verification
@@ -84,8 +113,14 @@ server/
   sockets.js    realtime authentication, delivery and presence
   app.js        HTTP API, security headers and production SPA routes
   index.js      startup, cleanup, graceful shutdown
-client/         routed vanilla JavaScript SPA and four themes
+client/         routed vanilla JavaScript SPA and eight themes
 scripts/        source syntax verification
 tests/          MongoDB/socket/HTTP integration and browser tests
 render.yaml     single-instance Render service definition
 ```
+
+### Profile photos, typography and themes
+
+Profile photos use the saved HTTPS `avatarUrl` in the account sidebar, direct-chat list/header, sender labels, user search, member lists and profile preview. Missing, invalid or failed photos fall back to initials. Google profile photos are imported when accounts are first created; existing users can set their photo URL under Settings → Profile.
+
+Arsenal loads from Google Fonts with `display=swap` and a system-font fallback. The production content security policy allows the Google Fonts stylesheet and font domains. Theme choices are Dark, Light, Glass, Midnight, Forest, Ocean, Rose and Sunset; selection persists in this browser and the active option is highlighted.

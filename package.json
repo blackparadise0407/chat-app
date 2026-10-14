@@ -14,7 +14,11 @@
     "check": "node scripts/check.js",
     "test:browser": "playwright test",
     "test:all": "npm run check && npm run build && npm test && npm run test:browser",
-    "format": "prettier --write server client scripts tests vite.config.js playwright.config.js package.json render.yaml"
+    "format": "prettier --write server client scripts tests vite.config.js playwright.config.js package.json render.yaml",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f mongo",
+    "db:check": "node scripts/check-db.js"
   },
   "keywords": [],
   "author": "",

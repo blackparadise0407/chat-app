@@ -44,7 +44,9 @@ let firebaseAuth,
   readTimer,
   logoutInProgress = false;
 const prefs = () => JSON.parse(localStorage.getItem('relay.preferences') || '{}');
-document.documentElement.dataset.theme = localStorage.getItem('relay.theme') || 'dark';
+const themes = ['dark', 'light', 'glass', 'midnight', 'forest', 'ocean', 'rose', 'sunset'];
+const savedTheme = localStorage.getItem('relay.theme');
+document.documentElement.dataset.theme = themes.includes(savedTheme) ? savedTheme : 'dark';
 const title = (c) =>
   c.type === 'group'
     ? c.title
@@ -56,7 +58,26 @@ const initials = (name) =>
     .slice(0, 2)
     .join('')
     .toUpperCase();
-const avatar = (name) => `<span class="avatar">${escape(initials(name))}</span>`;
+function avatar(name, avatarUrl) {
+  let src = '';
+  try {
+    const url = new URL(avatarUrl);
+    if (url.protocol === 'https:') src = url.href;
+  } catch {}
+  return `<span class="avatar"><span class="avatar-initials" aria-hidden="true">${escape(initials(name))}</span>${src ? `<img class="avatar-photo" src="${escape(src)}" alt="${escape(name || 'User')} avatar" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}</span>`;
+}
+const conversationAvatar = (c) => {
+  const user = c.type === 'direct' ? c.members.find((m) => m.userId !== state.me.id)?.user : null;
+  return avatar(title(c), user?.avatarUrl);
+};
+// Image error events do not bubble; capture them to keep initials visible on failure.
+document.addEventListener(
+  'error',
+  (event) => {
+    if (event.target.matches?.('.avatar-photo')) event.target.remove();
+  },
+  true,
+);
 function toast(message) {
   toastEl.textContent = message;
   toastEl.classList.add('show');
@@ -411,7 +432,7 @@ function connectionView() {
   if (el) el.textContent = state.connection;
 }
 function shell() {
-  root.innerHTML = `<div class="app-shell"><aside><a class="brand" data-link href="/conversations"><span class="brand-icon">R</span>Relay<span class="tag">PRIVATE</span></a><div class="aside-title">YOUR CONVERSATIONS <button id="archive-view" class="text-button">${state.archived ? 'Active' : 'Archived'}</button></div><div class="new-actions"><a data-link href="/conversations/new">＋ New chat</a><a data-link href="/groups/new">New group</a></div><nav id="conversations"></nav><div class="pagination"><button id="prev-page">←</button><span id="page-label"></span><button id="next-page">→</button></div><div class="account">${avatar(state.me.displayName)}<a data-link href="/settings/profile"><strong>${escape(state.me.displayName)}</strong><small>@${escape(state.me.handle)}</small></a><a data-link href="/settings/preferences" aria-label="Preferences">⚙</a></div></aside><main id="screen"></main></div>`;
+  root.innerHTML = `<div class="app-shell"><aside><a class="brand" data-link href="/conversations"><span class="brand-icon">R</span>Relay<span class="tag">PRIVATE</span></a><div class="aside-title">YOUR CONVERSATIONS <button id="archive-view" class="text-button">${state.archived ? 'Active' : 'Archived'}</button></div><div class="new-actions"><a data-link href="/conversations/new">＋ New chat</a><a data-link href="/groups/new">New group</a></div><nav id="conversations"></nav><div class="pagination"><button id="prev-page">←</button><span id="page-label"></span><button id="next-page">→</button></div><div class="account">${avatar(state.me.displayName, state.me.avatarUrl)}<a data-link href="/settings/profile"><strong>${escape(state.me.displayName)}</strong><small>@${escape(state.me.handle)}</small></a><a data-link href="/settings/preferences" aria-label="Preferences">⚙</a></div></aside><main id="screen"></main></div>`;
   sidebar();
   document.querySelector('#archive-view').onclick = () => {
     state.archived = !state.archived;
@@ -442,7 +463,7 @@ function sidebar() {
     state.conversations
       .map(
         (c) =>
-          `<a class="conversation ${state.active === c._id ? 'selected' : ''}" data-link href="/conversations/${c._id}">${avatar(title(c))}<div><strong>${escape(title(c))}</strong><small>${c.membership.muted ? 'Muted · ' : ''}${escape(c.lastMessage?.type === 'image' ? 'Photo' : c.lastMessage?.content || 'Start a conversation')}</small></div><span>${c.unread ? `<b class="badge">${c.unread}</b>` : ''}<small>${c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleDateString([], { month: 'short', day: 'numeric' }) : ''}</small></a>`,
+          `<a class="conversation ${state.active === c._id ? 'selected' : ''}" data-link href="/conversations/${c._id}">${conversationAvatar(c)}<div><strong>${escape(title(c))}</strong><small>${c.membership.muted ? 'Muted · ' : ''}${escape(c.lastMessage?.type === 'image' ? 'Photo' : c.lastMessage?.content || 'Start a conversation')}</small></div><span>${c.unread ? `<b class="badge">${c.unread}</b>` : ''}<small>${c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleDateString([], { month: 'short', day: 'numeric' }) : ''}</small></a>`,
       )
       .join('') || '<p class="muted empty-list">No conversations yet</p>';
   const p = document.querySelector('#page-label');
@@ -459,7 +480,7 @@ function chatHeader() {
   const el = document.querySelector('#chat-header');
   if (!el || !state.details) return;
   const c = state.details;
-  el.innerHTML = `<div class="header-person">${avatar(title(c))}<div><h2>${escape(title(c))}</h2><small>${c.type === 'group' ? `${c.members.length} members` : state.online.has(c.members.find((m) => m.userId !== state.me.id)?.userId) ? 'Online' : 'Private conversation'}</small></div></div><div class="header-actions"><span id="connection">${state.connection}</span><button id="buzz-button" title="Buzz · 45-second cooldown">⚡ Buzz</button><a data-link href="/conversations/${c._id}/details" class="button">Details</a></div>`;
+  el.innerHTML = `<div class="header-person">${conversationAvatar(c)}<div><h2>${escape(title(c))}</h2><small>${c.type === 'group' ? `${c.members.length} members` : state.online.has(c.members.find((m) => m.userId !== state.me.id)?.userId) ? 'Online' : 'Private conversation'}</small></div></div><div class="header-actions"><span id="connection">${state.connection}</span><button id="buzz-button" title="Buzz · 45-second cooldown">⚡ Buzz</button><a data-link href="/conversations/${c._id}/details" class="button">Details</a></div>`;
   document.querySelector('#buzz-button').onclick = () =>
     emit('buzz', { conversationId: c._id }).catch(showError);
 }
@@ -493,9 +514,9 @@ function timeline(forceBottom = false) {
           !next ||
           next.senderId !== m.senderId ||
           new Date(next.createdAt) - new Date(m.createdAt) >= 120000,
-        sender =
-          c?.members.find((x) => x.userId === m.senderId)?.user.displayName || 'Former member';
-      return `<div class="message ${mine ? 'mine' : ''} ${grouped ? 'grouped' : ''}">${!mine && !grouped ? `<small class="sender">${escape(sender)}</small>` : ''}<div class="bubble">${m.type === 'image' ? `<img class="shared-image" data-image="${m.attachmentId}" alt="Shared photo" loading="lazy">` : escape(m.content).replace(/(https?:\/\/[^\s&<>]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')}<time>${new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>${last ? receipt(m) : ''}</div>`;
+        sender = c?.members.find((x) => x.userId === m.senderId)?.user;
+      const senderName = sender?.displayName || 'Former member';
+      return `<div class="message ${mine ? 'mine' : ''} ${grouped ? 'grouped' : ''}">${!mine && !grouped ? `<span class="sender">${avatar(senderName, sender?.avatarUrl)}<small>${escape(senderName)}</small></span>` : ''}<div class="bubble">${m.type === 'image' ? `<img class="shared-image" data-image="${m.attachmentId}" alt="Shared photo" loading="lazy">` : escape(m.content).replace(/(https?:\/\/[^\s&<>]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')}<time>${new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>${last ? receipt(m) : ''}</div>`;
     })
     .join(
       '',
@@ -752,7 +773,7 @@ function newConversation(group = false) {
         el.textContent = 'No other user found';
         return;
       }
-      el.innerHTML = `<div class="user-result">${avatar(user.displayName)}<span>${escape(user.displayName)} <small>@${escape(user.handle)}</small></span><button id="choose-user">${group ? 'Add' : 'Chat'}</button></div>`;
+      el.innerHTML = `<div class="user-result">${avatar(user.displayName, user.avatarUrl)}<span>${escape(user.displayName)} <small>@${escape(user.handle)}</small></span><button id="choose-user">${group ? 'Add' : 'Chat'}</button></div>`;
       document.querySelector('#choose-user').onclick = async () => {
         try {
           if (group) {
@@ -816,7 +837,7 @@ async function detailsScreen(id, version) {
   card(
     escape(title(c)),
     'Conversation settings and membership',
-    `<a class="button" data-link href="/conversations/${id}">← Back to chat</a><div class="settings-row"><label><input id="mute" type="checkbox" ${c.membership.muted ? 'checked' : ''}> Mute notifications</label><button id="archive">${c.membership.archivedAt ? 'Unarchive' : 'Archive'}</button></div>${c.type === 'group' && admin ? `<form id="rename" class="form inline"><input name="title" value="${escape(c.title)}" maxlength="100" required><button>Rename</button></form><form id="add-member" class="form inline"><input name="userId" placeholder="Registered user's app ID" required><button>Add member</button></form><p class="muted">Added members can see all retained history.</p>` : ''}<h3>Members</h3><div class="members">${c.members.map((m) => `<div class="member">${avatar(m.user.displayName)}<div><strong>${escape(m.user.displayName)}</strong><small>@${escape(m.user.handle)} · ${m.userId === c.ownerId ? 'Owner' : m.role}</small></div>${c.type === 'group' && owner && m.userId !== state.me.id ? `<button data-role="${m.userId}" data-next="${m.role === 'admin' ? 'member' : 'admin'}">${m.role === 'admin' ? 'Demote' : 'Make admin'}</button><button data-transfer="${m.userId}">Make owner</button>` : ''}${c.type === 'group' && m.userId !== c.ownerId && m.userId !== state.me.id && admin && (owner || m.role !== 'admin') ? `<button class="danger" data-remove="${m.userId}">Remove</button>` : ''}</div>`).join('')}</div>${c.type === 'group' ? `<button id="leave" class="danger" ${owner ? 'disabled' : ''}>Leave group</button>${owner ? '<p class="muted">Transfer ownership before leaving.</p>' : ''}` : ''}`,
+    `<a class="button" data-link href="/conversations/${id}">← Back to chat</a><div class="settings-row"><label><input id="mute" type="checkbox" ${c.membership.muted ? 'checked' : ''}> Mute notifications</label><button id="archive">${c.membership.archivedAt ? 'Unarchive' : 'Archive'}</button></div>${c.type === 'group' && admin ? `<form id="rename" class="form inline"><input name="title" value="${escape(c.title)}" maxlength="100" required><button>Rename</button></form><form id="add-member" class="form inline"><input name="userId" placeholder="Registered user's app ID" required><button>Add member</button></form><p class="muted">Added members can see all retained history.</p>` : ''}<h3>Members</h3><div class="members">${c.members.map((m) => `<div class="member">${avatar(m.user.displayName, m.user.avatarUrl)}<div><strong>${escape(m.user.displayName)}</strong><small>@${escape(m.user.handle)} · ${m.userId === c.ownerId ? 'Owner' : m.role}</small></div>${c.type === 'group' && owner && m.userId !== state.me.id ? `<button data-role="${m.userId}" data-next="${m.role === 'admin' ? 'member' : 'admin'}">${m.role === 'admin' ? 'Demote' : 'Make admin'}</button><button data-transfer="${m.userId}">Make owner</button>` : ''}${c.type === 'group' && m.userId !== c.ownerId && m.userId !== state.me.id && admin && (owner || m.role !== 'admin') ? `<button class="danger" data-remove="${m.userId}">Remove</button>` : ''}</div>`).join('')}</div>${c.type === 'group' ? `<button id="leave" class="danger" ${owner ? 'disabled' : ''}>Leave group</button>${owner ? '<p class="muted">Transfer ownership before leaving.</p>' : ''}` : ''}`,
   );
   const perform = (fn) => async () => {
     try {
@@ -892,7 +913,7 @@ function profile() {
   card(
     'Your profile',
     'Share your handle so others can find you.',
-    `<form id="profile" class="form"><label>Display name<input name="displayName" maxlength="60" required value="${escape(state.me.displayName)}"></label><label>Public handle<input name="handle" pattern="[a-z0-9_]{3,24}" required value="${escape(state.me.handle)}"></label><label>Avatar HTTPS URL<input name="avatarUrl" type="url" value="${escape(state.me.avatarUrl || '')}"></label><button>Save profile</button></form><p class="muted">Your app ID: <code>${state.me.id}</code></p><button id="logout" class="danger">Sign out</button>`,
+    `<div class="profile-avatar">${avatar(state.me.displayName, state.me.avatarUrl)}</div><form id="profile" class="form"><label>Display name<input name="displayName" maxlength="60" required value="${escape(state.me.displayName)}"></label><label>Public handle<input name="handle" pattern="[a-z0-9_]{3,24}" required value="${escape(state.me.handle)}"></label><label>Avatar HTTPS URL<input name="avatarUrl" type="url" value="${escape(state.me.avatarUrl || '')}"></label><button>Save profile</button></form><p class="muted">Your app ID: <code>${state.me.id}</code></p><button id="logout" class="danger">Sign out</button>`,
   );
   document.querySelector('#profile').onsubmit = async (e) => {
     e.preventDefault();
@@ -913,13 +934,16 @@ function preferencesScreen() {
   card(
     'Make it yours',
     'Preferences apply to this browser.',
-    `<div class="theme-options">${['dark', 'light', 'glass', 'midnight'].map((t) => `<button class="theme-preview ${t}" data-theme="${t}">${t}</button>`).join('')}</div><div class="settings-row"><label><input id="sound" type="checkbox" ${p.sound !== false ? 'checked' : ''}> Notification sounds</label></div><div class="settings-row"><label><input id="notifications" type="checkbox" ${p.notifications ? 'checked' : ''}> Desktop notifications</label></div><p class="muted">Desktop notifications work while this app is open. Your browser controls permission.</p>`,
+    `<div class="theme-options">${themes.map((t) => `<button class="theme-preview ${t}" data-theme="${t}" aria-pressed="${document.documentElement.dataset.theme === t}">${t}</button>`).join('')}</div><div class="settings-row"><label><input id="sound" type="checkbox" ${p.sound !== false ? 'checked' : ''}> Notification sounds</label></div><div class="settings-row"><label><input id="notifications" type="checkbox" ${p.notifications ? 'checked' : ''}> Desktop notifications</label></div><p class="muted">Desktop notifications work while this app is open. Your browser controls permission.</p>`,
   );
-  document.querySelectorAll('[data-theme]').forEach(
+  document.querySelectorAll('button[data-theme]').forEach(
     (b) =>
       (b.onclick = () => {
         document.documentElement.dataset.theme = b.dataset.theme;
         localStorage.setItem('relay.theme', b.dataset.theme);
+        document
+          .querySelectorAll('button[data-theme]')
+          .forEach((option) => option.setAttribute('aria-pressed', String(option === b)));
       }),
   );
   document.querySelector('#sound').onchange = (e) =>
@@ -1038,5 +1062,5 @@ try {
 } catch (e) {
   root.innerHTML =
     '<div class="loading">Firebase configuration is missing. Set the environment variables and restart the server.</div>';
-  console.error(e);
+  console.error(e.name);
 }

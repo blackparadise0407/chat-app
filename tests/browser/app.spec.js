@@ -21,7 +21,12 @@ const conversation = {
   members,
   unread: 1,
 };
-async function setup(page, signedIn = true) {
+async function setup(page, signedIn = true, avatarUrl = null) {
+  const profile = { ...me, avatarUrl };
+  const chat = structuredClone(conversation);
+  chat.members.forEach((member) => {
+    member.user.avatarUrl = avatarUrl;
+  });
   await page.addInitScript(
     ({ signedIn, conversation, me }) => {
       window.socketCount = 0;
@@ -102,7 +107,7 @@ async function setup(page, signedIn = true) {
         return socket;
       };
     },
-    { signedIn, conversation, me },
+    { signedIn, conversation: chat, me: profile },
   );
   await page.route('**/api/**', (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -110,9 +115,9 @@ async function setup(page, signedIn = true) {
       path === '/api/config'
         ? { firebase: {} }
         : path === '/api/me'
-          ? me
+          ? profile
           : path === '/api/conversations'
-            ? [conversation]
+            ? [chat]
             : path.endsWith('/messages')
               ? {
                   messages: [
@@ -132,8 +137,8 @@ async function setup(page, signedIn = true) {
                   hasMore: false,
                 }
               : path.includes('/users/lookup')
-                ? { id: bob, displayName: 'Sam', handle: 'sam' }
-                : conversation;
+                ? { id: bob, displayName: 'Sam', handle: 'sam', avatarUrl }
+                : chat;
     return route.fulfill({ json: data });
   });
 }
@@ -268,4 +273,59 @@ test('live sequence gaps recover before advancing read-through positions', async
   release();
   await expect(page.getByText('Recovered missing message', { exact: false })).toBeVisible();
   await expect(page.locator('.bubble')).toHaveCount(3);
+});
+
+test('profile photos render across chat, members, profile and user lookup; failures fall back', async ({
+  page,
+}) => {
+  const url = 'https://avatars.example.test/profile.png';
+  await page.route(url, (route) =>
+    route.fulfill({
+      contentType: 'image/png',
+      body: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=',
+        'base64',
+      ),
+    }),
+  );
+  await setup(page, true, url);
+  await page.goto(`/conversations/${cid}`);
+  for (const selector of ['.account', '.conversation', '.header-person', '.sender']) {
+    const image = page.locator(`${selector} .avatar-photo`);
+    await expect(image).toHaveAttribute('src', url);
+    await expect
+      .poll(() => image.evaluate((img) => img.complete && img.naturalWidth > 0))
+      .toBe(true);
+  }
+  await page.getByRole('link', { name: 'Details', exact: true }).click();
+  await expect(page.locator('.member .avatar-photo')).toHaveCount(2);
+  await page.goto('/settings/profile');
+  await expect(page.locator('.profile-avatar .avatar-photo')).toHaveAttribute('src', url);
+  await page.goto('/conversations/new');
+  await page.locator('input[name=query]').fill('sam');
+  await page.getByRole('button', { name: 'Find user' }).click();
+  await expect(page.locator('.user-result .avatar-photo')).toHaveAttribute('src', url);
+  await page.route(url, (route) => route.abort());
+  await page.reload();
+  await expect(page.locator('.account .avatar-photo')).toHaveCount(0);
+  await expect(page.locator('.account .avatar-initials')).toHaveText('K');
+});
+test('new themes persist with selected state and Arsenal typography', async ({ page }) => {
+  await setup(page);
+  await page.goto('/settings/preferences');
+  await expect(page.locator('.theme-preview')).toHaveCount(8);
+  for (const theme of ['forest', 'ocean', 'rose', 'sunset']) {
+    await page.getByRole('button', { name: theme, exact: true }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await expect(page.locator('.theme-preview[aria-pressed="true"]')).toHaveCount(1);
+    await page.reload();
+    await expect(page.getByRole('button', { name: theme, exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  }
+  expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toContain(
+    'Arsenal',
+  );
+  await expect(page.locator('link[href*="family=Arsenal"]')).toHaveCount(1);
 });
